@@ -1,0 +1,10 @@
+:root {
+  --paper: #e9e3d7; --paper-deep: #d8d0c1; --ink: #272720; --ink-soft: #666257; --line: rgba(39, 39, 32, .18);
+  --kiln: #171310; --kiln-soft: #2a211b; --ember: #b96845; --ash: #b8afa1; --jade: #9fb9b2; --cobalt: #3a5c86; --copper: #a97959; --gold: #a58a5f;
+  --display: "Hiragino Mincho ProN", "Yu Mincho", "Songti SC", "STSong", "Noto Serif CJK SC", "Noto Serif SC", "Source Han Serif SC", Georgia, serif;
+  --serif: var(--display);
+  --sans: "Avenir Next", "Helvetica Neue", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --mono: "SFMono-Regular", Consolas, monospace; --ease: cubic-bezier(.2,.75,.2,1); --fast: 240ms; --slow: 900ms;
+  --page: min(1240px, calc(100vw - 80px)); --gutter: clamp(20px, 5vw, 80px);
+}
+@media (max-width: 720px) { :root { --page: calc(100vw - 36px); } }
