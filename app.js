@@ -36,6 +36,30 @@ const TIMELINE_STAGE_INDEX = { clay: 0, dry: 1, glaze: 2, kiln: 3, reduction: 4,
 let lastTimelineKey = '';
 let timelineCachePage = null;
 let timelineCacheSteps = [];
+let gestureIntro = null;
+
+function beginGestureIntro() {
+  if (!interaction || gestureIntro) return;
+  const from = Number(interaction.getProgress?.() ?? 0);
+  if (!Number.isFinite(from) || from <= 0.001) return;
+  gestureIntro = { from, start: performance.now(), duration: 1500 };
+  // Reset the input value while the camera is still in manual mode. The
+  // firing controller is eased separately so camera start-up and the visual
+  // reset cannot fight each other.
+  interaction.setProgress?.(0);
+}
+
+function sampleGestureIntro(now = performance.now()) {
+  if (!gestureIntro) return null;
+  const t = Math.min(1, Math.max(0, (now - gestureIntro.start) / gestureIntro.duration));
+  const eased = t * t * (3 - 2 * t);
+  const value = gestureIntro.from * (1 - eased);
+  if (t >= 1) {
+    gestureIntro = null;
+    return 0;
+  }
+  return value;
+}
 
 function syncFiringTimeline(progress) {
   const page = document.querySelector('.kiln-page');
@@ -526,8 +550,15 @@ async function mountRuViewer(stage, mode = 'detail') {
         }
       }
     } else if (inView) {
-      if (interaction) {
+      let introProgress = null;
+      if (gestureIntro) {
+        introProgress = sampleGestureIntro(now);
+        if (state.firing) state.firing.setProgress(introProgress, false);
+        lastFiringProgress = introProgress;
+      } else if (interaction) {
         lastFiringProgress = syncFiringProgress(interaction, state, lastFiringProgress);
+      }
+      if (interaction) {
         const rotation = interaction.consumeRotation();
         if (rotation.yaw !== 0 || rotation.pitch !== 0) {
           state.applyGestureRotation(rotation.yaw, rotation.pitch);
@@ -539,7 +570,7 @@ async function mountRuViewer(stage, mode = 'detail') {
       }
       rotX += (targetX - rotX) * 0.12;
       rotY += (targetY - rotY) * 0.12;
-      const progress = state.firing?.getProgress?.() ?? 0;
+      const progress = introProgress ?? state.firing?.getProgress?.() ?? 0;
       const changed = needsRender
         || Math.abs(progress - renderedProgress) > 1e-5
         || Math.abs(rotX - renderedRotX) > 1e-5
@@ -664,7 +695,7 @@ async function mountRuViewer(stage, mode = 'detail') {
         state.firing = await createRuFiring({
           renderer, scene, camera, group, model, stage,
           keyLight, rimLight, fillLight,
-          initialProgress: 0,
+          initialProgress: interaction?.getProgress?.() ?? 1,
           showPlay: false,
           onProgressRequest: requestManualProgress
         });
@@ -840,8 +871,15 @@ async function mountJunViewer(stage) {
     const cameraActive = interaction?.getState?.().cameraStatus === 'ready';
     if (cameraActive && now - lastMotionAt < 14.5) return;
     lastMotionAt = now;
-    if (interaction) {
+    let introProgress = null;
+    if (gestureIntro) {
+      introProgress = sampleGestureIntro(now);
+      if (state.firing) state.firing.setProgress(introProgress, false);
+      lastFiringProgress = introProgress;
+    } else if (interaction) {
       lastFiringProgress = syncFiringProgress(interaction, state, lastFiringProgress);
+    }
+    if (interaction) {
       const rotation = interaction.consumeRotation();
       if (rotation.yaw !== 0 || rotation.pitch !== 0) {
         state.applyGestureRotation(rotation.yaw, rotation.pitch);
@@ -853,7 +891,7 @@ async function mountJunViewer(stage) {
     }
     rotX += (targetX - rotX) * 0.12;
     rotY += (targetY - rotY) * 0.12;
-    const progress = state.firing?.getProgress?.() ?? 1;
+    const progress = introProgress ?? state.firing?.getProgress?.() ?? 1;
     const changed = needsRender
       || Math.abs(progress - renderedProgress) > 1e-5
       || Math.abs(rotX - renderedRotX) > 1e-5
@@ -977,7 +1015,7 @@ async function mountJunViewer(stage) {
       state.firing = await createJunFiring({
         renderer, scene, camera, group, model, stage,
         keyLight, topLight, fillLight,
-        initialProgress: 0,
+        initialProgress: interaction?.getProgress?.() ?? 1,
         showPlay: false,
         onProgressRequest: requestManualProgress
       });
@@ -1037,14 +1075,15 @@ function render(next = route()) {
   lastTimelineKey = '';
   timelineCachePage = null;
   timelineCacheSteps = [];
+  gestureIntro = null;
   app.focus({preventScroll:true});
   bindMotion();
   bindStoryTheme();
   if (isKiln) {
     bindKiln();
     if (next.id === 'ru' || next.id === 'jun') {
-      interaction = createInteractionSystem({ workId: `gesture-${next.id}`, initialProgress: 0 });
-      gestureControls = mountGestureControls({ system: interaction });
+      interaction = createInteractionSystem({ workId: `gesture-${next.id}`, initialProgress: 1 });
+      gestureControls = mountGestureControls({ system: interaction, onEnable: beginGestureIntro });
     }
     if (next.id === 'ru') mountRuViewer(document.querySelector('[data-model-stage]'), 'detail');
     else if (next.id === 'jun') mountJunViewer(document.querySelector('[data-jun-stage]'));

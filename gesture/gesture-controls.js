@@ -19,7 +19,7 @@ const ERROR_TEXT = {
   unknown: '摄像头启动失败。',
 };
 
-export function mountGestureControls({ system }) {
+export function mountGestureControls({ system, onEnable }) {
   const page = document.querySelector('.kiln-page');
   const host = page?.querySelector('.kiln-info');
   if (!page || !host) return { dispose() {} };
@@ -100,6 +100,7 @@ export function mountGestureControls({ system }) {
       render(system.getState());
       return;
     }
+    if (typeof onEnable === 'function') onEnable();
     busy = true;
     render(system.getState());
     try {
