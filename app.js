@@ -13,6 +13,8 @@ let scrollRaf = 0;
 let scrollBehaviorBackup = null;
 let interaction = null;
 let gestureControls = null;
+const HIGH_PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 1.75);
+const ACTIVE_PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 1.25);
 
 function disposeInteraction() {
   gestureControls?.dispose();
@@ -516,7 +518,7 @@ async function mountRuViewer(stage, mode = 'detail') {
   hoistDetailChrome(stage);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.35));
+  renderer.setPixelRatio(HIGH_PIXEL_RATIO);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1;
@@ -588,6 +590,14 @@ async function mountRuViewer(stage, mode = 'detail') {
   resize();
   window.addEventListener('resize', resize, { passive:true });
 
+  const applyRenderScale = (active) => {
+    const target = active ? ACTIVE_PIXEL_RATIO : HIGH_PIXEL_RATIO;
+    if (Math.abs(renderer.getPixelRatio() - target) < 0.01) return;
+    renderer.setPixelRatio(target);
+    resize();
+    needsRender = true;
+  };
+
   const state = { renderer, pmrem, canvas, surface, raf: 0, observer: null, handlers: null };
   state.resize = resize;
   state.applyGestureRotation = (yaw, pitch) => {
@@ -610,9 +620,13 @@ async function mountRuViewer(stage, mode = 'detail') {
   const animate = (now = performance.now()) => {
     if (!ruViewer) return;
     state.raf = requestAnimationFrame(animate);
-    const cameraActive = interaction?.getState?.().cameraStatus === 'ready';
+    const cameraStatus = interaction?.getState?.().cameraStatus;
+    const cameraActive = cameraStatus === 'ready';
     if (cameraActive && now - lastMotionAt < 14.5) return;
     lastMotionAt = now;
+    if (mode === 'detail') {
+      applyRenderScale(cameraActive || cameraStatus === 'requesting' || cameraStatus === 'loading' || Boolean(gestureIntro));
+    }
     if (mode === 'story') {
       const ceramic = stage.closest('.story-ceramic');
       const active = !ceramic || ceramic.dataset.theme === 'ru';
@@ -860,7 +874,7 @@ async function mountJunViewer(stage) {
   hoistDetailChrome(stage);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.35));
+  renderer.setPixelRatio(HIGH_PIXEL_RATIO);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.LinearToneMapping;   /* 与交付渲染的 Standard 转换一致 */
   renderer.toneMappingExposure = 2.2;               /* 按交付渲染亮度标定 */
@@ -941,6 +955,14 @@ async function mountJunViewer(stage) {
   resize();
   window.addEventListener('resize', resize, { passive:true });
 
+  const applyRenderScale = (active) => {
+    const target = active ? ACTIVE_PIXEL_RATIO : HIGH_PIXEL_RATIO;
+    if (Math.abs(renderer.getPixelRatio() - target) < 0.01) return;
+    renderer.setPixelRatio(target);
+    resize();
+    needsRender = true;
+  };
+
   const state = { renderer, pmrem, env, canvas, surface, raf: 0, observer: null, handlers: null };
   state.resize = resize;
   state.applyGestureRotation = (yaw, pitch) => {
@@ -953,9 +975,11 @@ async function mountJunViewer(stage) {
   const animate = (now = performance.now()) => {
     if (!junViewer) return;
     state.raf = requestAnimationFrame(animate);
-    const cameraActive = interaction?.getState?.().cameraStatus === 'ready';
+    const cameraStatus = interaction?.getState?.().cameraStatus;
+    const cameraActive = cameraStatus === 'ready';
     if (cameraActive && now - lastMotionAt < 14.5) return;
     lastMotionAt = now;
+    applyRenderScale(cameraActive || cameraStatus === 'requesting' || cameraStatus === 'loading' || Boolean(gestureIntro));
     let introProgress = null;
     if (gestureIntro) {
       introProgress = sampleGestureIntro(now);
