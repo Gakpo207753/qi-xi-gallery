@@ -1,6 +1,6 @@
 import { ceramics } from './data/ceramics.js';
 import { createInteractionSystem } from './interaction/index.js';
-import { mountGestureControls } from './gesture/gesture-controls.js';
+import { mountGestureControls } from './gesture/gesture-controls.js?v=20261120-smooth1';
 
 const app = document.querySelector('#app');
 const body = document.body;
@@ -98,6 +98,81 @@ function syncFiringProgress(interaction, state, lastProgress) {
     return progress;
   }
   return lastProgress;
+}
+
+const prefetchedAssets = new Set();
+const DETAIL_ASSETS = {
+  ru: [
+    'assets/models/ru-lotus.glb',
+    'assets/textures/firing/ru-clay-base.webp',
+    'assets/textures/firing/ru-clay-normal.webp',
+    'assets/textures/firing/ru-clay-orm.webp',
+    'assets/textures/firing/ru-raw-normal.webp',
+    'assets/textures/firing/ru-clean-base.webp',
+    'assets/textures/firing/ru-clean-normal.webp'
+  ],
+  jun: [
+    'assets/models/jun-calibrated.glb',
+    'assets/textures/firing/ru-clay-base.webp',
+    'assets/textures/firing/ru-clay-normal.webp',
+    'assets/textures/firing/ru-clay-orm.webp'
+  ]
+};
+
+const CAMERA_METADATA_ASSETS = [
+  'assets/mediapipe/vision_bundle.mjs',
+  'assets/mediapipe/hand_landmarker.task'
+];
+
+function canPrefetch() {
+  const connection = navigator.connection;
+  return navigator.onLine !== false
+    && !connection?.saveData
+    && !['slow-2g', '2g'].includes(connection?.effectiveType);
+}
+
+function prefetchAsset(url) {
+  if (!url || !canPrefetch() || prefetchedAssets.has(url)) return;
+  prefetchedAssets.add(url);
+  try {
+    fetch(url, { cache: 'force-cache', credentials: 'same-origin', priority: 'low' }).catch(() => {});
+  } catch {
+    // A failed prefetch must never affect navigation or rendering.
+  }
+}
+
+function prefetchDetailAssets(id) {
+  const assets = DETAIL_ASSETS[id];
+  if (!assets) return;
+  assets.forEach(prefetchAsset);
+}
+
+function prefetchCameraMetadata() {
+  CAMERA_METADATA_ASSETS.forEach(prefetchAsset);
+}
+
+function scheduleIdle(task, timeout = 3500) {
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(task, { timeout });
+  else setTimeout(task, 1800);
+}
+
+function bindDetailPrefetch() {
+  const items = [...document.querySelectorAll('.archive-item')];
+  if (!items.length) return;
+  const warm = (event) => {
+    const item = event.currentTarget;
+    const href = item.getAttribute('href') || '';
+    const id = href.match(/#kiln\/(ru|jun)/)?.[1];
+    if (id) prefetchDetailAssets(id);
+  };
+  items.forEach((item) => {
+    item.addEventListener('pointerenter', warm, { once: true });
+    item.addEventListener('focusin', warm, { once: true });
+    item.addEventListener('touchstart', warm, { once: true, passive: true });
+  });
+  // Warm the small Ru model on home idle; Jun stays intent-triggered because
+  // its calibrated model is 35 MB and must not compete with the first paint.
+  scheduleIdle(() => prefetchDetailAssets('ru'), 4500);
 }
 
 function hoistDetailChrome(stage) {
@@ -441,7 +516,7 @@ async function mountRuViewer(stage, mode = 'detail') {
   hoistDetailChrome(stage);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.35));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1;
@@ -705,6 +780,16 @@ async function mountRuViewer(stage, mode = 'detail') {
           applyRuGlazeSpecular(model.getObjectByName('LotusBowl_continuous_wall').material);
         }
       }
+      try {
+        scene.updateMatrixWorld(true);
+        if (typeof renderer.compileAsync === 'function') {
+          await renderer.compileAsync(scene, camera);
+        }
+      } catch {
+        // Shader compilation warm-up is optional.
+      }
+      needsRender = true;
+      scheduleIdle(prefetchCameraMetadata, 3200);
     }
 
     stage.classList.remove('is-loading');
@@ -775,7 +860,7 @@ async function mountJunViewer(stage) {
   hoistDetailChrome(stage);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.35));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.LinearToneMapping;   /* 与交付渲染的 Standard 转换一致 */
   renderer.toneMappingExposure = 2.2;               /* 按交付渲染亮度标定 */
@@ -1022,6 +1107,16 @@ async function mountJunViewer(stage) {
     } catch (error) {
       console.warn('Jun firing animation unavailable', error);
     }
+    try {
+      scene.updateMatrixWorld(true);
+      if (typeof renderer.compileAsync === 'function') {
+        await renderer.compileAsync(scene, camera);
+      }
+    } catch {
+      // Shader compilation warm-up is optional.
+    }
+    needsRender = true;
+    scheduleIdle(prefetchCameraMetadata, 3200);
     if (!junViewer) return;
 
     stage.classList.remove('is-loading');
@@ -1088,6 +1183,7 @@ function render(next = route()) {
     if (next.id === 'ru') mountRuViewer(document.querySelector('[data-model-stage]'), 'detail');
     else if (next.id === 'jun') mountJunViewer(document.querySelector('[data-jun-stage]'));
   } else {
+    bindDetailPrefetch();
     const storyStage = document.querySelector('[data-story-stage]');
     if (storyStage) observeStoryStage(storyStage);
   }
